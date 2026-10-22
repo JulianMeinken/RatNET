@@ -1,3 +1,4 @@
 node_modules/
 .ratnet-state/
 *.log
+.~lock.*#

@@ -6,7 +6,7 @@ const path = require('path');
 const { createReceiver, listen } = require('./server');
 const { Outbox } = require('./outbox');
 const { DemoSensor } = require('./demodata');
-const { msgKey } = require('./protocol');
+const { msgKey, msgLabel } = require('./protocol');
 const { makeLogger } = require('./log');
 
 // Laufende Nummer, die nur hochzaehlen kann - auch ueber Neustarts hinweg.
@@ -87,22 +87,31 @@ class SensorNode {
     if (this.server) this.server.close();
   }
 
+  // RattenID + Zeitstempel identifizieren eine Nachricht, daher darf ein
+  // Zeitstempel pro Ratte nie doppelt vorkommen (auch nicht, wenn die Uhr
+  // zurueckgestellt wird).
+  nextTimestamp() {
+    this.lastTs = Math.max(Date.now(), (this.lastTs || 0) + 1);
+    return this.lastTs;
+  }
+
   measure() {
     const msg = {
       rat_id: this.id,
       seq: this.counter.next(),
-      ts: Math.floor(Date.now() / 1000),
+      ts: this.nextTimestamp(),
       data: this.sensor.read(),
       path: [this.id],
     };
     this.seen.add(msgKey(msg));
     this.stats.generated++;
     this.outboxes.forEach((o) => o.put(msg));
-    this.log(`MESSUNG  ${msgKey(msg)}  ${JSON.stringify(msg.data)}`);
+    this.log(`MESSUNG  ${msgLabel(msg)}  ${JSON.stringify(msg.data)}`);
   }
 
   receive(msg, from) {
     const key = msgKey(msg);
+    const label = msgLabel(msg);
     // Schleifenschutz: Nachricht war schon einmal hier
     if (msg.path.includes(this.id) || msg.rat_id === this.id) {
       this.stats.dropped++;
@@ -111,7 +120,7 @@ class SensorNode {
     if (this.dedup) {
       if (this.seen.has(key)) {
         this.stats.dropped++;
-        this.log(`DUPLIKAT ${key} von ${from} - nicht erneut weitergeleitet`);
+        this.log(`DUPLIKAT ${label} von ${from} - nicht erneut weitergeleitet`);
         return;
       }
       this.seen.add(key);
@@ -119,7 +128,7 @@ class SensorNode {
     const fwd = { ...msg, path: [...msg.path, this.id] };
     this.outboxes.forEach((o) => o.put(fwd));
     this.stats.relayed++;
-    this.log(`RELAY    ${key}  von ${from}  Weg ${fwd.path.join('>')}`);
+    this.log(`RELAY    ${label}  von ${from}  Weg ${fwd.path.join('>')}`);
   }
 
   status() {

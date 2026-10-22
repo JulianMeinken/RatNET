@@ -6,7 +6,7 @@
 // die laenger als ttlMs im Puffer liegen, werden verworfen.
 
 const net = require('net');
-const { encode, attachLineReader, msgKey } = require('./protocol');
+const { encode, attachLineReader, msgKey, msgLabel } = require('./protocol');
 
 class Outbox {
   constructor({ peer, nodeId, ttlMs = 60000, retryMs = 2000, ackTimeoutMs = 3000, log = () => {} }) {
@@ -65,7 +65,7 @@ class Outbox {
       if (now - item.enqueuedAt > this.ttlMs) {
         this.items.delete(id);
         this.stats.expired++;
-        this.log(`VERWORFEN ${msgKey(item.msg)} (Weg ${item.msg.path.join('>')}) -> ${this.name} (Timeout ${Math.round(this.ttlMs / 1000)}s ueberschritten)`);
+        this.log(`VERWORFEN ${msgLabel(item.msg)} (Weg ${item.msg.path.join('>')}) -> ${this.name} (Timeout ${Math.round(this.ttlMs / 1000)}s ueberschritten)`);
       }
     }
   }

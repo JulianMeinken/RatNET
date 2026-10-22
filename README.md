@@ -110,7 +110,7 @@ hoher **Verzögerung** (Empfangszeit − Messzeit). Liegt eine Nachricht länger
 {
   "rat_id": "A",
   "seq": 17,
-  "ts": 1761134400,
+  "ts": 1761134400123,
   "data": { "temperature_c": 15.2, "humidity_pct": 91.3, "methane_ppm": 80,
             "heart_rate_bpm": 410, "battery_pct": 97.5, "position_m": 42.1 },
   "path": ["A", "B", "C"]
@@ -121,7 +121,9 @@ hoher **Verzögerung** (Empfangszeit − Messzeit). Liegt eine Nachricht länger
 - `seq`: laufende Nummer, zählt **nur hoch**. Sie wird in
   `.ratnet-state/seq-<ID>.json` gespeichert, *bevor* sie verwendet wird, und
   läuft deshalb auch nach einem Neustart weiter.
-- `ts`: ungefährer Zeitstempel (Unix-Sekunden, lokale Uhr des Sensors)
+- `ts`: ungefährer Zeitstempel (Unix-Millisekunden, lokale Uhr des Sensors).
+  Pro Ratte **streng steigend**: Er ist zusammen mit `rat_id` der Schlüssel
+  für die Duplikaterkennung.
 - `data`: Demo-Sensordaten (Random Walk)
 - `path`: Knoten, die die Nachricht durchlaufen hat (für Anzeige und Schleifenschutz)
 
@@ -139,10 +141,20 @@ hoher **Verzögerung** (Empfangszeit − Messzeit). Liegt eine Nachricht länger
 
 ### Duplikaterkennung
 
-Eine Nachricht ist eindeutig durch `(rat_id, seq)` bestimmt. Die Leitstelle
-merkt sich pro Ratte alle empfangenen Nummern. Kommt eine Nummer erneut an
-(anderer Weg, erneute Übertragung nach verlorenem ACK), wird sie bestätigt,
-aber nicht noch einmal registriert.
+Eine Nachricht ist eindeutig durch `(rat_id, ts)` bestimmt, also RattenID +
+Zeitstempel. Die Leitstelle merkt sich pro Ratte alle empfangenen
+Zeitstempel. Kommt derselbe Zeitstempel erneut an (anderer Weg, erneute
+Übertragung nach verlorenem ACK), wird die Nachricht bestätigt, aber nicht noch
+einmal registriert.
+
+Damit das sicher funktioniert, vergibt der Sensor Zeitstempel in Millisekunden
+und erhöht sie bei Bedarf um 1 ms, sodass eine Ratte nie zwei Nachrichten mit
+gleichem Zeitstempel erzeugt (auch bei sehr kurzem `--interval` oder wenn die
+Uhr zurückgestellt wird). Die laufende Nummer `seq` wird weiterhin mitgeschickt
+und im Dashboard für die Anzeige fehlender Nummern genutzt, ist für die
+Duplikaterkennung aber nicht mehr relevant. Ein zurückgesetzter Zähler (z.B.
+gelöschtes `.ratnet-state`) führt deshalb nicht mehr dazu, dass neue
+Nachrichten fälschlich als Duplikat verworfen werden.
 
 Standardmäßig leiten Relays Duplikate weiter, damit die Deduplizierung in der
 Leitstelle sichtbar ist. Mit `--dedup` verwirft schon das Relay bereits
@@ -207,3 +219,6 @@ persistente laufende Nummer.
 - Keine Verschlüsselung/Authentifizierung, `--allow` filtert nur nach IP.
 - Die Leitstelle hält ihren Zustand im Speicher; nach einem Neustart beginnt
   die Duplikaterkennung von vorn.
+- Alle Knoten müssen dieselbe Version laufen lassen: Seit der Umstellung auf
+  RattenID + Zeitstempel ist `ts` in Millisekunden, ältere Sensoren (Sekunden)
+  sind nicht kompatibel.

@@ -93,7 +93,7 @@
 const ONLINE_MS = 15000;
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
-const hms = (sec) => new Date(sec * 1000).toLocaleTimeString('de-DE');
+const hms = (ms) => new Date(ms).toLocaleTimeString('de-DE');
 
 function spark(values, cls) {
   if (values.length < 2) return '';
@@ -136,7 +136,6 @@ function renderTopo(s) {
   // Kanten aus den Wegen der empfangenen Nachrichten ableiten
   const edges = new Map();
   const depth = new Map();
-  const nowSec = s.now / 1000;
   for (const e of s.events) {
     const p = [...e.path, 'LS'];
     p.forEach((n, i) => depth.set(n, Math.max(depth.get(n) ?? 0, i)));
@@ -160,7 +159,7 @@ function renderTopo(s) {
   let svg = '';
   for (const ed of edges.values()) {
     const a = pos.get(ed.a), b = pos.get(ed.b);
-    const active = nowSec - ed.last < 5;
+    const active = s.now - ed.last < 5000;
     // Kanten, die Spalten ueberspringen, nach oben biegen, damit sie nicht durch Knoten laufen
     const skip = Math.abs(depth.get(ed.b) - depth.get(ed.a)) - 1;
     const cx = (a.x + b.x) / 2, cy = (a.y + b.y) / 2 - 70 * skip;
@@ -175,7 +174,7 @@ function renderTopo(s) {
 
 function renderEvents(s) {
   $('events').innerHTML = s.events.map((e) => {
-    const delay = Math.max(0, e.received - e.ts);
+    const delay = Math.max(0, Math.round((e.received - e.ts) / 1000));
     return `<tr>
       <td>${hms(e.received)}</td>
       <td><span class="tag ${e.duplicate ? 'dup' : 'new'}">${e.duplicate ? 'DUPLIKAT' : 'NEU'}</span></td>

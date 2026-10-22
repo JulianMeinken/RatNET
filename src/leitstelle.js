@@ -7,7 +7,7 @@ const fs = require('fs');
 const http = require('http');
 const path = require('path');
 const { createReceiver, listen } = require('./server');
-const { msgKey } = require('./protocol');
+const { msgKey, msgLabel } = require('./protocol');
 const { makeLogger } = require('./log');
 
 const HISTORY = 120;
@@ -48,7 +48,18 @@ class Leitstelle {
   _rat(id) {
     let r = this.rats.get(id);
     if (!r) {
-      r = { id, seqs: new Set(), minSeq: Infinity, maxSeq: 0, count: 0, duplicates: 0, last: null, lastSeen: 0, history: [] };
+      r = {
+        id,
+        seen: new Set(), // Zeitstempel bereits registrierter Nachrichten (Duplikaterkennung)
+        seqs: new Set(), // nur fuer die Anzeige fehlender Nummern
+        minSeq: Infinity,
+        maxSeq: 0,
+        count: 0,
+        duplicates: 0,
+        last: null,
+        lastSeen: 0,
+        history: [],
+      };
       this.rats.set(id, r);
     }
     return r;
@@ -57,14 +68,16 @@ class Leitstelle {
   receive(msg, from) {
     const r = this._rat(msg.rat_id);
     const key = msgKey(msg);
+    const label = msgLabel(msg);
     const now = Date.now();
-    const duplicate = r.seqs.has(msg.seq);
+    // Duplikat = gleiche RattenID und gleicher Zeitstempel
+    const duplicate = r.seen.has(msg.ts);
     const event = {
       key,
       rat_id: msg.rat_id,
       seq: msg.seq,
       ts: msg.ts,
-      received: Math.floor(now / 1000),
+      received: now,
       path: msg.path,
       from,
       duplicate,
@@ -75,30 +88,31 @@ class Leitstelle {
     if (duplicate) {
       r.duplicates++;
       this.totals.duplicates++;
-      this.log(`DUPLIKAT ${key}  Weg ${msg.path.join('>')}  -> ignoriert`);
+      this.log(`DUPLIKAT ${label} (${key})  Weg ${msg.path.join('>')}  -> ignoriert`);
       return;
     }
 
+    r.seen.add(msg.ts);
     r.seqs.add(msg.seq);
     r.minSeq = Math.min(r.minSeq, msg.seq);
     r.maxSeq = Math.max(r.maxSeq, msg.seq);
     r.count++;
     r.lastSeen = now;
-    if (!r.last || msg.seq > r.last.seq) r.last = msg;
+    if (!r.last || msg.ts > r.last.ts) r.last = msg;
     r.history.push({ seq: msg.seq, ts: msg.ts, data: msg.data });
-    r.history.sort((a, b) => a.seq - b.seq);
+    r.history.sort((a, b) => a.ts - b.ts);
     if (r.history.length > HISTORY) r.history.shift();
     this.totals.registered++;
-    const delay = Math.max(0, Math.floor(now / 1000) - msg.ts);
+    const delay = Math.max(0, Math.round((now - msg.ts) / 1000));
     this.log(
-      `NEU      ${key}  Weg ${msg.path.join('>')}  Verzoegerung ~${delay}s  ${JSON.stringify(msg.data)}`
+      `NEU      ${label}  Weg ${msg.path.join('>')}  Verzoegerung ~${delay}s  ${JSON.stringify(msg.data)}`
     );
   }
 
   _missing(r) {
     const missing = [];
     if (r.count === 0) return { count: 0, list: missing };
-    const count = r.maxSeq - r.minSeq + 1 - r.seqs.size;
+    const count = Math.max(0, r.maxSeq - r.minSeq + 1 - r.seqs.size);
     for (let s = r.minSeq; s <= r.maxSeq && missing.length < 20; s++) if (!r.seqs.has(s)) missing.push(s);
     return { count, list: missing };
   }

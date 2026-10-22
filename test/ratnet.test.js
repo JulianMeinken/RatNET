@@ -140,6 +140,26 @@ test('Timeout: Nachrichten aelter als TTL werden verworfen', async () => {
   }
 });
 
+test('Duplikaterkennung ueber RattenID + Zeitstempel', () => {
+  const ls = new Leitstelle({ port: 0, webPort: null, quiet: true });
+  const msg = (rat_id, seq, ts) => ({ rat_id, seq, ts, data: {}, path: [rat_id] });
+  ls.receive(msg('A', 1, 1000), 'A');
+  ls.receive(msg('A', 1, 1000), 'B'); // gleiche Nachricht auf zweitem Weg
+  ls.receive(msg('A', 1, 2000), 'A'); // gleiche Nummer (z.B. nach Reset), anderer Zeitstempel
+  ls.receive(msg('B', 1, 1000), 'B'); // gleicher Zeitstempel, andere Ratte
+  assert.strictEqual(rat(ls, 'A').count, 2);
+  assert.strictEqual(rat(ls, 'A').duplicates, 1);
+  assert.strictEqual(rat(ls, 'B').count, 1);
+  assert.strictEqual(ls.totals.duplicates, 1);
+});
+
+test('Zeitstempel einer Ratte sind eindeutig, auch bei schnellen Messungen', () => {
+  const s = new SensorNode({ id: 'T', port: 0, nextHops: [hop(1)], stateDir: null, quiet: true });
+  const ts = Array.from({ length: 1000 }, () => s.nextTimestamp());
+  assert.strictEqual(new Set(ts).size, ts.length);
+  ts.forEach((t, i) => i && assert.ok(t > ts[i - 1]));
+});
+
 test('Laufende Nummer zaehlt ueber Neustarts weiter', () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ratnet-'));
   const file = path.join(dir, 'seq-X.json');

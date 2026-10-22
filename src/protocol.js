@@ -2,24 +2,32 @@
 // Wire-Protokoll: TCP, eine JSON-Nachricht pro Zeile (NDJSON).
 //
 //   Sender -> Empfaenger:  {"type":"data","from":"A","msg":{...}}
-//   Empfaenger -> Sender:  {"type":"ack","key":"A#17"}
-//                          {"type":"nack","key":"A#17","reason":"..."}
+//   Empfaenger -> Sender:  {"type":"ack","key":"A@1761134400123"}
+//                          {"type":"nack","key":"A@1761134400123","reason":"..."}
 //
 // Eine Nachricht (msg) sieht so aus:
 //   {
 //     "rat_id": "A",            eindeutige ID der Ratte
 //     "seq":    17,             laufende Nummer, zaehlt nur hoch
-//     "ts":     1761134400,     ungefaehrer Zeitstempel (Unix-Sekunden)
+//     "ts":     1761134400123,  ungefaehrer Zeitstempel (Unix-Millisekunden),
+//                               pro Ratte streng steigend
 //     "data":   {...},          Sensordaten (Demodaten)
 //     "path":   ["A","B"]       Knoten, die die Nachricht bisher passiert hat
 //   }
 //
-// Ein ACK bedeutet: der Empfaenger hat die Verantwortung fuer die Nachricht
-// uebernommen (hop-by-hop Store-and-Forward).
+// Eine Nachricht ist eindeutig durch RattenID + Zeitstempel bestimmt
+// (Duplikaterkennung). Ein ACK bedeutet: der Empfaenger hat die Verantwortung
+// fuer die Nachricht uebernommen (hop-by-hop Store-and-Forward).
 
 const DEFAULT_PORT = 5000;
 
+// Identitaet einer Nachricht - Grundlage der Duplikaterkennung und der ACKs.
 function msgKey(msg) {
+  return `${msg.rat_id}@${msg.ts}`;
+}
+
+// Lesbare Bezeichnung fuer Logs, z.B. "A#17".
+function msgLabel(msg) {
   return `${msg.rat_id}#${msg.seq}`;
 }
 
@@ -33,7 +41,7 @@ function validateMsg(msg) {
     typeof msg === 'object' &&
     typeof msg.rat_id === 'string' && msg.rat_id.length > 0 &&
     Number.isInteger(msg.seq) && msg.seq >= 0 &&
-    typeof msg.ts === 'number' &&
+    Number.isInteger(msg.ts) && msg.ts > 0 &&
     msg.data !== null && typeof msg.data === 'object' &&
     Array.isArray(msg.path)
   );
@@ -81,6 +89,7 @@ function normalizeIp(addr) {
 module.exports = {
   DEFAULT_PORT,
   msgKey,
+  msgLabel,
   encode,
   validateMsg,
   attachLineReader,
