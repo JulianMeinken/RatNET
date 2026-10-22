@@ -1,0 +1,15 @@
+{
+  "name": "ratnet",
+  "version": "1.0.0",
+  "description": "Sensornetz fuer Kanalratten: Store-and-Forward-Relays mit Deduplizierung in der Leitstelle",
+  "license": "MIT",
+  "bin": {
+    "ratnet": "bin/ratnet.js"
+  },
+  "scripts": {
+    "test": "node --test"
+  },
+  "engines": {
+    "node": ">=18.3"
+  }
+}

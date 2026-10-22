@@ -1,0 +1,206 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>RatNET Leitstelle</title>
+<style>
+  :root {
+    --bg: #f4f5f7; --panel: #ffffff; --text: #1d2330; --muted: #6b7385; --border: #dfe2e8;
+    --accent: #2f6fde; --ok: #1f9d55; --warn: #d97706; --bad: #d64545; --dup: #8b5cf6;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #12151b; --panel: #1b1f27; --text: #e6e9ef; --muted: #8b93a5; --border: #2a303b;
+      --accent: #5b93f0; --ok: #34c37a; --warn: #f0a33b; --bad: #f06a6a; --dup: #a78bfa;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.4 system-ui, sans-serif; }
+  header { display: flex; flex-wrap: wrap; align-items: baseline; gap: 24px; padding: 16px 24px; border-bottom: 1px solid var(--border); background: var(--panel); }
+  h1 { margin: 0; font-size: 20px; }
+  h2 { margin: 0 0 12px; font-size: 15px; color: var(--muted); font-weight: 600; text-transform: uppercase; letter-spacing: .04em; }
+  .kpi { display: flex; gap: 24px; flex-wrap: wrap; }
+  .kpi div { color: var(--muted); }
+  .kpi b { color: var(--text); font-size: 18px; margin-right: 4px; font-variant-numeric: tabular-nums; }
+  main { padding: 16px 24px; display: grid; gap: 16px; max-width: 1400px; margin: 0 auto; }
+  section { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 16px; min-width: 0; }
+  .rats { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 12px; }
+  .rat { border: 1px solid var(--border); border-radius: 8px; padding: 12px; }
+  .rat .head { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+  .rat .name { font-weight: 700; font-size: 16px; }
+  .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--bad); }
+  .dot.on { background: var(--ok); }
+  .rat .seq { margin-left: auto; color: var(--muted); font-variant-numeric: tabular-nums; }
+  .vals { display: grid; grid-template-columns: 1fr 1fr; gap: 2px 12px; font-variant-numeric: tabular-nums; }
+  .vals span { color: var(--muted); }
+  .meta { margin-top: 8px; color: var(--muted); font-size: 12px; }
+  .meta .bad { color: var(--bad); }
+  .meta .dupc { color: var(--dup); }
+  svg.spark { width: 100%; height: 48px; margin-top: 8px; }
+  svg.spark path { fill: none; stroke: var(--accent); stroke-width: 1.5; }
+  svg.spark path.gas { stroke: var(--warn); }
+  table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+  th, td { text-align: left; padding: 4px 8px; border-bottom: 1px solid var(--border); white-space: nowrap; }
+  th { color: var(--muted); font-weight: 600; }
+  .tag { padding: 1px 6px; border-radius: 4px; font-size: 12px; font-weight: 600; }
+  .tag.new { background: color-mix(in srgb, var(--ok) 18%, transparent); color: var(--ok); }
+  .tag.dup { background: color-mix(in srgb, var(--dup) 18%, transparent); color: var(--dup); }
+  .delay.high { color: var(--warn); font-weight: 600; }
+  .scroll { overflow-x: auto; }
+  #topo { width: 100%; height: 200px; }
+  #topo circle { fill: var(--panel); stroke: var(--accent); stroke-width: 2; }
+  #topo circle.ls { stroke: var(--ok); }
+  #topo text { fill: var(--text); font-weight: 700; text-anchor: middle; dominant-baseline: central; }
+  #topo path { fill: none; stroke: var(--border); stroke-width: 2; }
+  #topo path.active { stroke: var(--accent); stroke-width: 3; }
+  #topo text.cnt { fill: var(--muted); font-weight: 400; font-size: 11px; }
+  .empty { color: var(--muted); }
+  #conn { margin-left: auto; color: var(--muted); }
+  #conn.err { color: var(--bad); }
+</style>
+</head>
+<body>
+<header>
+  <h1>🐀 RatNET Leitstelle</h1>
+  <div class="kpi">
+    <div><b id="k-reg">0</b>registriert</div>
+    <div><b id="k-dup">0</b>Duplikate ignoriert</div>
+    <div><b id="k-on">0</b>Ratten online</div>
+  </div>
+  <div id="conn">verbinde…</div>
+</header>
+<main>
+  <section>
+    <h2>Ratten</h2>
+    <div class="rats" id="rats"><div class="empty">Noch keine Daten empfangen.</div></div>
+  </section>
+  <section>
+    <h2>Beobachtete Wege</h2>
+    <svg id="topo" viewBox="0 0 800 200" preserveAspectRatio="xMidYMid meet"></svg>
+  </section>
+  <section>
+    <h2>Empfangene Nachrichten</h2>
+    <div class="scroll">
+      <table>
+        <thead><tr><th>Empfangen</th><th>Status</th><th>Ratte</th><th>Nr</th><th>Messzeit</th><th>Verzögerung</th><th>Weg</th></tr></thead>
+        <tbody id="events"></tbody>
+      </table>
+    </div>
+  </section>
+</main>
+<script>
+const ONLINE_MS = 15000;
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const hms = (sec) => new Date(sec * 1000).toLocaleTimeString('de-DE');
+
+function spark(values, cls) {
+  if (values.length < 2) return '';
+  const min = Math.min(...values), max = Math.max(...values), span = max - min || 1;
+  const pts = values.map((v, i) => `${(i / (values.length - 1)) * 100},${46 - ((v - min) / span) * 44}`);
+  return `<path class="${cls}" d="M${pts.join(' L')}" vector-effect="non-scaling-stroke"/>`;
+}
+
+function renderRats(s) {
+  const el = $('rats');
+  if (!s.rats.length) return;
+  el.innerHTML = s.rats.map((r) => {
+    const d = r.last ? r.last.data : {};
+    const on = s.now - r.lastSeen < ONLINE_MS;
+    const temps = r.history.map((h) => h.data.temperature_c);
+    const gas = r.history.map((h) => h.data.methane_ppm);
+    const missing = r.missing.count
+      ? `<span class="bad">fehlend ${r.missing.count}${r.missing.list.length ? ' (' + r.missing.list.join(', ') + (r.missing.count > r.missing.list.length ? ', …' : '') + ')' : ''}</span>`
+      : 'lückenlos';
+    return `<div class="rat">
+      <div class="head"><div class="dot ${on ? 'on' : ''}"></div><div class="name">Ratte ${esc(r.id)}</div>
+        <div class="seq">Nr ${r.firstSeq}–${r.lastSeq}</div></div>
+      <div class="vals">
+        <div><span>Temp</span> ${d.temperature_c ?? '–'} °C</div>
+        <div><span>Feuchte</span> ${d.humidity_pct ?? '–'} %</div>
+        <div><span>Methan</span> ${d.methane_ppm ?? '–'} ppm</div>
+        <div><span>Puls</span> ${d.heart_rate_bpm ?? '–'} bpm</div>
+        <div><span>Akku</span> ${d.battery_pct ?? '–'} %</div>
+        <div><span>Position</span> ${d.position_m ?? '–'} m</div>
+      </div>
+      <svg class="spark" viewBox="0 0 100 48" preserveAspectRatio="none">${spark(temps, '')}${spark(gas, 'gas')}</svg>
+      <div class="meta">${r.count} registriert · <span class="dupc">${r.duplicates} Duplikate</span> · ${missing}<br>
+        zuletzt ${r.lastSeen ? Math.round((s.now - r.lastSeen) / 1000) + ' s' : '–'} her · Weg ${r.last ? esc(r.last.path.join(' → ')) : '–'}
+        <br><span style="color:var(--accent)">━ Temperatur</span> <span style="color:var(--warn)">━ Methan</span></div>
+    </div>`;
+  }).join('');
+}
+
+function renderTopo(s) {
+  // Kanten aus den Wegen der empfangenen Nachrichten ableiten
+  const edges = new Map();
+  const depth = new Map();
+  const nowSec = s.now / 1000;
+  for (const e of s.events) {
+    const p = [...e.path, 'LS'];
+    p.forEach((n, i) => depth.set(n, Math.max(depth.get(n) ?? 0, i)));
+    for (let i = 0; i < p.length - 1; i++) {
+      const k = p[i] + '>' + p[i + 1];
+      const ed = edges.get(k) || { a: p[i], b: p[i + 1], n: 0, last: 0 };
+      ed.n++; ed.last = Math.max(ed.last, e.received);
+      edges.set(k, ed);
+    }
+  }
+  if (!depth.size) return;
+  const maxD = Math.max(...[...depth.entries()].filter(([n]) => n !== 'LS').map(([, d]) => d), 0);
+  depth.set('LS', maxD + 1);
+  const cols = new Map();
+  for (const [n, d] of depth) { if (!cols.has(d)) cols.set(d, []); cols.get(d).push(n); }
+  const pos = new Map();
+  const ncol = maxD + 2;
+  for (const [d, nodes] of cols) {
+    nodes.sort().forEach((n, i) => pos.set(n, { x: 60 + (d * 680) / Math.max(1, ncol - 1), y: (200 * (i + 1)) / (nodes.length + 1) }));
+  }
+  let svg = '';
+  for (const ed of edges.values()) {
+    const a = pos.get(ed.a), b = pos.get(ed.b);
+    const active = nowSec - ed.last < 5;
+    // Kanten, die Spalten ueberspringen, nach oben biegen, damit sie nicht durch Knoten laufen
+    const skip = Math.abs(depth.get(ed.b) - depth.get(ed.a)) - 1;
+    const cx = (a.x + b.x) / 2, cy = (a.y + b.y) / 2 - 70 * skip;
+    svg += `<path d="M${a.x},${a.y} Q${cx},${cy} ${b.x},${b.y}" class="${active ? 'active' : ''}"/>`;
+    svg += `<text class="cnt" x="${cx}" y="${(a.y + b.y) / 2 - 35 * skip - 10}">${ed.n}</text>`;
+  }
+  for (const [n, p] of pos) {
+    svg += `<circle cx="${p.x}" cy="${p.y}" r="22" class="${n === 'LS' ? 'ls' : ''}"/><text x="${p.x}" y="${p.y}">${esc(n)}</text>`;
+  }
+  $('topo').innerHTML = svg;
+}
+
+function renderEvents(s) {
+  $('events').innerHTML = s.events.map((e) => {
+    const delay = Math.max(0, e.received - e.ts);
+    return `<tr>
+      <td>${hms(e.received)}</td>
+      <td><span class="tag ${e.duplicate ? 'dup' : 'new'}">${e.duplicate ? 'DUPLIKAT' : 'NEU'}</span></td>
+      <td>${esc(e.rat_id)}</td><td>${e.seq}</td><td>${hms(e.ts)}</td>
+      <td class="delay ${delay > 5 ? 'high' : ''}">${delay} s</td>
+      <td>${esc(e.path.join(' → '))} → LS</td></tr>`;
+  }).join('');
+}
+
+async function tick() {
+  try {
+    const s = await (await fetch('/api/state', { cache: 'no-store' })).json();
+    $('k-reg').textContent = s.totals.registered;
+    $('k-dup').textContent = s.totals.duplicates;
+    $('k-on').textContent = s.rats.filter((r) => s.now - r.lastSeen < ONLINE_MS).length;
+    renderRats(s); renderTopo(s); renderEvents(s);
+    $('conn').textContent = 'live · ' + new Date().toLocaleTimeString('de-DE');
+    $('conn').className = '';
+  } catch (e) {
+    $('conn').textContent = 'Leitstelle nicht erreichbar';
+    $('conn').className = 'err';
+  }
+}
+tick();
+setInterval(tick, 1000);
+</script>
+</body>
+</html>
